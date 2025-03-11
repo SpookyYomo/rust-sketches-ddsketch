@@ -41,9 +41,10 @@ pub struct DDSketch {
     config: Config,
     store: Store,
     negative_store: Store,
+    store_rolling_mean: f64,
+    negative_store_rolling_mean: f64,
     min: f64,
     max: f64,
-    sum: f64,
     zero_count: u64,
 }
 
@@ -61,15 +62,28 @@ impl DDSketch {
             config,
             store: Store::new(config.max_num_bins as usize),
             negative_store: Store::new(config.max_num_bins as usize),
+            store_rolling_mean: 0.,
+            negative_store_rolling_mean: 0.,
             min: f64::INFINITY,
             max: f64::NEG_INFINITY,
-            sum: 0.0,
             zero_count: 0,
         }
     }
 
     /// Add the sample to the sketch
     pub fn add(&mut self, v: f64) {
+        if v.is_sign_positive() {
+            self.store_rolling_mean = {
+                let count = self.store.count() as f64; // Lossy
+                self.store_rolling_mean * (count / (count + 1.)) + v / (count + 1.)
+            };
+        } else if v.is_sign_negative() {
+            self.negative_store_rolling_mean = {
+                let count = self.negative_store.count() as f64; // Lossy
+                self.negative_store_rolling_mean * (count / (count + 1.)) + v / (count + 1.)
+            };
+        };
+
         if v > self.config.min_possible() {
             let key = self.config.key(v);
             self.store.add(key);
@@ -86,7 +100,6 @@ impl DDSketch {
         if self.max < v {
             self.max = v;
         }
-        self.sum += v;
     }
 
     /// Return the quantile value for quantiles between 0.0 and 1.0. Result is an error, represented
@@ -149,7 +162,10 @@ impl DDSketch {
         if self.empty() {
             None
         } else {
-            Some(self.sum)
+            Some(
+                self.store.count() as f64 * self.store_rolling_mean
+                    + self.negative_store.count() as f64 * self.negative_store_rolling_mean,
+            )
         }
     }
 
@@ -173,6 +189,32 @@ impl DDSketch {
 
         let was_empty = self.store.count() == 0;
 
+        // Update the rolling mean value of both stores.
+        self.store_rolling_mean = {
+            if self.store.count() + o.store.count() == 0 {
+                0.0
+            } else {
+                let self_count = self.store.count();
+                let o_count = o.store.count();
+                let total_count = (self_count + o_count) as f64;
+
+                self.store_rolling_mean * (self_count as f64 / total_count)
+                    + o.store_rolling_mean * (o_count as f64 / total_count)
+            }
+        };
+        self.negative_store_rolling_mean = {
+            if self.negative_store.count() + o.negative_store.count() == 0 {
+                0.0
+            } else {
+                let self_count = self.negative_store.count();
+                let o_count = o.negative_store.count();
+                let total_count = (self_count + o_count) as f64;
+
+                self.negative_store_rolling_mean * (self_count as f64 / total_count)
+                    + o.negative_store_rolling_mean * (o_count as f64 / total_count)
+            }
+        };
+
         // Merge the stores
         self.store.merge(&o.store);
         self.negative_store.merge(&o.negative_store);
@@ -191,7 +233,6 @@ impl DDSketch {
                 self.max = o.max;
             }
         }
-        self.sum += o.sum;
 
         Ok(())
     }
@@ -346,7 +387,7 @@ mod tests {
         assert_eq!(dd.max(), Some(0.755188464));
         assert_eq!(dd.min(), Some(0.750064549));
         assert_eq!(dd.count(), 31);
-        assert_eq!(dd.sum(), Some(23.343630625000003));
+        assert_relative_eq!(dd.sum().unwrap(), 23.343630625000003, max_relative = 1e-8);
 
         assert!(dd.quantile(0.25).unwrap().is_some());
         assert!(dd.quantile(0.5).unwrap().is_some());
