@@ -169,6 +169,20 @@ impl DDSketch {
         }
     }
 
+    /// Returns the average of the values seen, or NOne if the sketch is empty.
+    pub fn avg(&self) -> Option<f64> {
+        if self.empty() {
+            None
+        } else {
+            let total_count = (self.store.count() + self.negative_store.count()) as f64;
+            Some(
+                (self.store.count() as f64 / total_count) * self.store_rolling_mean
+                    + (self.negative_store.count() as f64 / total_count)
+                        * self.negative_store_rolling_mean,
+            )
+        }
+    }
+
     /// Returns the number of values added to the sketch
     pub fn count(&self) -> usize {
         (self.store.count() + self.zero_count + self.negative_store.count()) as usize
