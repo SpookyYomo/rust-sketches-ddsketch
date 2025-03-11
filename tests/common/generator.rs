@@ -62,7 +62,7 @@ impl Normal {
 }
 impl Generator for Normal {
     fn generate(&mut self) -> f64 {
-        self.distr.sample(&mut rand::thread_rng())
+        self.distr.sample(&mut rand::rng())
     }
 }
 
@@ -81,7 +81,7 @@ impl Lognormal {
 }
 impl Generator for Lognormal {
     fn generate(&mut self) -> f64 {
-        self.distr.sample(&mut rand::thread_rng())
+        self.distr.sample(&mut rand::rng())
     }
 }
 
@@ -100,6 +100,6 @@ impl Exponential {
 }
 impl Generator for Exponential {
     fn generate(&mut self) -> f64 {
-        self.distr.sample(&mut rand::thread_rng())
+        self.distr.sample(&mut rand::rng())
     }
 }
